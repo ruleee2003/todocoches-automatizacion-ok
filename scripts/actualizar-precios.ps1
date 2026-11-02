@@ -42,7 +42,7 @@ function Get-Media($lista) { if ($lista.Count -eq 0) { return $null }; return [m
 $datos = [IO.File]::ReadAllText($Entrada, [Text.Encoding]::UTF8) | ConvertFrom-Json
 if ($datos.ResultadoConsulta -ne 'OK') { throw "ResultadoConsulta: $($datos.ResultadoConsulta)" }
 
-$fechaApi = [datetime]::ParseExact($datos.Fecha, 'dd/MM/yyyy HH:mm:ss', $inv)
+$fechaApi = [datetime]::ParseExact($datos.Fecha, 'dd/MM/yyyy H:mm:ss', $inv)
 $estaciones = @($datos.ListaEESSPrecio | Where-Object { $_.'Tipo Venta' -eq 'P' })
 
 # --- medias ---
