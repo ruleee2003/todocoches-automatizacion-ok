@@ -1,0 +1,39 @@
+name: Actualizar precios de combustible
+
+on:
+  schedule:
+    - cron: '30 6 * * *'   # cada día, sobre las 7:30-8:30 en España
+  workflow_dispatch:       # permite lanzarlo a mano desde la pestaña Actions
+
+permissions:
+  contents: write
+
+jobs:
+  precios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generar los archivos de precios
+        shell: pwsh
+        run: ./scripts/actualizar-precios.ps1 -OutDir salida -HistoricoPath datos/precios-historico.json
+
+      - name: Subir solo los dos archivos JSON a IONOS
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          LFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          SFTP_PATH: ${{ secrets.SFTP_PATH }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lftp
+          lftp --env-password -u "$SFTP_USER" "sftp://$SFTP_HOST" -e "set sftp:auto-confirm yes; set net:max-retries 2; set net:timeout 30; cd \"${SFTP_PATH:-/}\"; lcd salida; put precios.json; put precios-historico.json; bye"
+
+      - name: Guardar el histórico en el repositorio
+        run: |
+          git config user.name "todocoches-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add datos/precios-historico.json
+          git diff --cached --quiet || git commit -m "Precios del $(date +%F)"
+          git push
