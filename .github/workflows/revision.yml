@@ -1,0 +1,20 @@
+name: Revisión técnica semanal
+
+on:
+  schedule:
+    - cron: '0 5 * * 1'   # cada lunes, sobre las 6:00-7:00 en España
+  workflow_dispatch:      # permite lanzarlo a mano desde la pestaña Actions
+
+permissions:
+  contents: read
+
+jobs:
+  revision:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Revisar la web publicada
+        shell: pwsh
+        run: ./scripts/revision-tecnica.ps1
