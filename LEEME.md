@@ -32,3 +32,12 @@ Actions → Actualizar precios de combustible → Run workflow
 curl.exe -o datos-ministerio.json -H "Accept: application/json" "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/"
 .\scripts\actualizar-precios.ps1 -Entrada datos-ministerio.json -OutDir salida -HistoricoPath datos\precios-historico.json
 ```
+
+## Revisión técnica semanal
+
+Cada lunes, `scripts/revision-tecnica.ps1` revisa la web publicada: páginas del sitemap, enlaces y archivos internos, redirecciones, `robots.txt`, `ads.txt`, certificado HTTPS, compresión y precios del día. Solo lee, no modifica nada.
+
+- **Verde:** no hay errores. Los avisos, si los hay, están en el resumen de la ejecución.
+- **Rojo:** hay algo roto y GitHub avisa por correo. El informe está en el resumen de la ejecución.
+
+**Al actualizar este repositorio, no vuelvas a subir la carpeta `datos`:** borrarías días del histórico de precios.
