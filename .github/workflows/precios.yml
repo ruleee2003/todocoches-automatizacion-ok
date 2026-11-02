@@ -15,10 +15,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Descargar los datos del Ministerio
+        run: |
+          URL="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/"
+          OPC="--fail --silent --show-error --max-time 180 --retry 3 --retry-delay 30 --retry-all-errors -H Accept:application/json -o datos-ministerio.json"
+          if curl $OPC "$URL"; then
+            echo "Descarga correcta"
+          else
+            echo "Primer intento fallido: se añade el certificado intermedio de DigiCert y se detalla la conexión"
+            curl --fail --silent --show-error -o intermedio.crt "http://cacerts.digicert.eu/DigiCertG2TLSEURSA4096SHA3842022CA1.crt"
+            openssl x509 -inform DER -in intermedio.crt -out intermedio.pem || cp intermedio.crt intermedio.pem
+            cat /etc/ssl/certs/ca-certificates.crt intermedio.pem > certificados.pem
+            curl --verbose --cacert certificados.pem $OPC "$URL"
+          fi
+          ls -l datos-ministerio.json
+
       - name: Generar los archivos de precios
         shell: pwsh
-        run: ./scripts/actualizar-precios.ps1 -OutDir salida -HistoricoPath datos/precios-historico.json
-
+        run: ./scripts/actualizar-precios.ps1 -Entrada datos-ministerio.json -OutDir salida -HistoricoPath datos/precios-historico.json
       - name: Subir solo los dos archivos JSON a IONOS
         env:
           SFTP_HOST: ${{ secrets.SFTP_HOST }}
