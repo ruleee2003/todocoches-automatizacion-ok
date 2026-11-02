@@ -29,5 +29,6 @@ Actions → Actualizar precios de combustible → Run workflow
 ## Probarlo en el ordenador
 
 ```powershell
-.\scripts\actualizar-precios.ps1 -OutDir salida -HistoricoPath datos\precios-historico.json
+curl.exe -o datos-ministerio.json -H "Accept: application/json" "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/"
+.\scripts\actualizar-precios.ps1 -Entrada datos-ministerio.json -OutDir salida -HistoricoPath datos\precios-historico.json
 ```

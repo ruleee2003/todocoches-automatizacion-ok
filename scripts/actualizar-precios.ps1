@@ -1,19 +1,19 @@
-﻿# Descarga los precios oficiales de carburantes y genera dos archivos pequeños para la web:
+﻿# A partir de los precios oficiales de carburantes (JSON del Ministerio) genera dos archivos pequeños para la web:
 #   precios.json            medias de hoy (España y provincias) y gasolinera más barata por provincia
 #   precios-historico.json  una media nacional por día, que crece con el tiempo
 #
 # Si los datos no parecen correctos, el script falla SIN escribir nada: la web conserva
 # el último dato bueno y GitHub avisa por correo.
 param(
+  [Parameter(Mandatory = $true)][string]$Entrada,
   [Parameter(Mandatory = $true)][string]$OutDir,
   [Parameter(Mandatory = $true)][string]$HistoricoPath
 )
 $ErrorActionPreference = 'Stop'
+$Entrada = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Entrada)
 $OutDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutDir)
 $HistoricoPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HistoricoPath)
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$url = 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/'
 $inv = [Globalization.CultureInfo]::InvariantCulture
 $utf8 = New-Object Text.UTF8Encoding($false)
 
@@ -38,23 +38,9 @@ function Convert-Precio($v) {
 }
 function Get-Media($lista) { if ($lista.Count -eq 0) { return $null }; return [math]::Round(($lista | Measure-Object -Average).Average, 3) }
 
-# --- descarga, con reintentos ---
-$datos = $null
-for ($i = 1; $i -le 3; $i++) {
-  try {
-    $wc = New-Object Net.WebClient
-    $wc.Encoding = [Text.Encoding]::UTF8
-    $wc.Headers['Accept'] = 'application/json'
-    $wc.Headers['User-Agent'] = 'todocoches.org precios'
-    $datos = $wc.DownloadString($url) | ConvertFrom-Json
-    if ($datos.ResultadoConsulta -eq 'OK') { break }
-    throw "ResultadoConsulta: $($datos.ResultadoConsulta)"
-  } catch {
-    Write-Warning "Intento $i fallido: $($_.Exception.Message)"
-    if ($i -eq 3) { throw }
-    Start-Sleep -Seconds (30 * $i)
-  }
-}
+# --- datos descargados previamente con curl ---
+$datos = [IO.File]::ReadAllText($Entrada, [Text.Encoding]::UTF8) | ConvertFrom-Json
+if ($datos.ResultadoConsulta -ne 'OK') { throw "ResultadoConsulta: $($datos.ResultadoConsulta)" }
 
 $fechaApi = [datetime]::ParseExact($datos.Fecha, 'dd/MM/yyyy HH:mm:ss', $inv)
 $estaciones = @($datos.ListaEESSPrecio | Where-Object { $_.'Tipo Venta' -eq 'P' })
