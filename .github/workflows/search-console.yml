@@ -1,0 +1,40 @@
+name: Informe de Search Console
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'   # cada lunes, sobre las 8:00-9:00 en España
+  workflow_dispatch:      # permite lanzarlo a mano desde la pestaña Actions
+
+permissions:
+  contents: write
+
+jobs:
+  informe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Instalar lo necesario
+        run: pip install --quiet google-auth requests
+
+      - name: Generar el informe
+        env:
+          GSC_CREDENCIALES: ${{ secrets.GSC_CREDENCIALES }}
+        run: python scripts/informe-search-console.py
+
+      - name: Guardar el histórico
+        if: always()
+        run: |
+          git config user.name "todocoches-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add datos/ || true
+          if ! git diff --cached --quiet; then
+            git commit -m "Search Console del $(date +%F)"
+            git pull --rebase
+            git push
+          fi
