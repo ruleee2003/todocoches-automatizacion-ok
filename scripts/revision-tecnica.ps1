@@ -60,6 +60,9 @@ Comprobar-Redireccion "https://www.$hostWeb/" $Base
 $no = Pedir ($Base + 'pagina-que-no-existe-revision.html')
 if ($no.Status -ne 404) { $errores.Add("Una página inexistente responde $($no.Status) en lugar de 404") }
 
+$git = Pedir ($Base + '.git/HEAD')
+if ($git.Status -eq 200) { $errores.Add('La carpeta .git está publicada en la web: hay que borrarla del servidor cuanto antes') }
+
 $z = Pedir $Base 'GET' $true
 if ($z.Encoding -notmatch 'gzip|br') { $avisos.Add('La compresión de la web no está activa') }
 
