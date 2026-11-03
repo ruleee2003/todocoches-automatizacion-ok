@@ -92,6 +92,11 @@ else {
     $dp = $pr.Text | ConvertFrom-Json
     $edad = ((Get-Date).Date - [datetime]::ParseExact([string]$dp.fecha, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)).Days
     if ($edad -gt 2) { $errores.Add("Los precios llevan $edad días sin actualizarse (último dato: $($dp.fecha))") }
+    if (-not $dp.luz) { $avisos.Add('precios.json no incluye el precio de la luz') }
+    else {
+      $edadLuz = ((Get-Date).Date - [datetime]::ParseExact([string]$dp.luz.fecha, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)).Days
+      if ($edadLuz -gt 2) { $avisos.Add("El precio de la luz lleva $edadLuz días sin actualizarse (último dato: $($dp.luz.fecha))") }
+    }
   } catch { $errores.Add("precios.json no se puede leer: $($_.Exception.Message)") }
 }
 

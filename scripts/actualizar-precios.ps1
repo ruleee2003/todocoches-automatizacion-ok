@@ -7,12 +7,23 @@
 param(
   [Parameter(Mandatory = $true)][string]$Entrada,
   [Parameter(Mandatory = $true)][string]$OutDir,
-  [Parameter(Mandatory = $true)][string]$HistoricoPath
+  [Parameter(Mandatory = $true)][string]$HistoricoPath,
+  [string]$EntradaLuz = '',
+  [string]$LuzHistoricoPath = '',
+  [string]$LuzInicial = ''
 )
+
+# Impuestos de la luz: si el Gobierno los cambia, solo hay que tocar estas dos líneas.
+$ivaLuz = 21
+$impuestoElectrico = 5.11269632
 $ErrorActionPreference = 'Stop'
 $Entrada = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Entrada)
 $OutDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutDir)
 $HistoricoPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HistoricoPath)
+foreach ($v in 'EntradaLuz', 'LuzHistoricoPath', 'LuzInicial') {
+  $val = Get-Variable $v -ValueOnly
+  if ($val) { Set-Variable $v ($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($val)) }
+}
 
 $inv = [Globalization.CultureInfo]::InvariantCulture
 $utf8 = New-Object Text.UTF8Encoding($false)
@@ -78,6 +89,52 @@ $listaProv = foreach ($id in ($prov.Keys | Sort-Object { $provincias[$_] })) {
   [ordered]@{ id = $id; nombre = $provincias[$id]; estaciones = $p.n; g95 = Get-Media $p.g95; diesel = Get-Media $p.diesel; g98 = Get-Media $p.g98; glp = Get-Media $p.glp; barata_g95 = $p.barata_g95; barata_diesel = $p.barata_diesel }
 }
 
+# --- luz: precio regulado (PVPC) hora a hora, en euros/kWh y sin impuestos ---
+# Si hoy falla la descarga, se mantiene el último dato bueno: un fallo aquí no debe frenar los carburantes.
+$luz = $null
+if ($LuzHistoricoPath) {
+  $factorLuz = (1 + $impuestoElectrico / 100) * (1 + $ivaLuz / 100)
+  $histLuz = @()
+  $origen = if (Test-Path -LiteralPath $LuzHistoricoPath) { $LuzHistoricoPath } elseif ($LuzInicial -and (Test-Path -LiteralPath $LuzInicial)) { $LuzInicial } else { $null }
+  if ($origen) { foreach ($h in ([IO.File]::ReadAllText($origen, [Text.Encoding]::UTF8) | ConvertFrom-Json)) { $histLuz += [ordered]@{ f = [string]$h.f; media = $h.media; noche = $h.noche } } }
+
+  $horas = @(); $fechaLuz = $null
+  try {
+    if ($EntradaLuz -and (Test-Path -LiteralPath $EntradaLuz)) {
+      foreach ($r in ([IO.File]::ReadAllText($EntradaLuz, [Text.Encoding]::UTF8) | ConvertFrom-Json).PVPC) {
+        $v = [double]::Parse(([string]$r.PCB).Replace(',', '.'), $inv) / 1000
+        if ($v -lt -0.2 -or $v -gt 1.5) { throw "Precio de la luz fuera de rango: $v" }
+        $horas += [ordered]@{ h = [string]$r.Hora; p = [math]::Round($v, 4) }
+        $fechaLuz = [datetime]::ParseExact([string]$r.Dia, 'dd/MM/yyyy', $inv).ToString('yyyy-MM-dd')
+      }
+      if ($horas.Count -lt 23 -or $horas.Count -gt 25) { throw "Número de horas inesperado: $($horas.Count)" }
+    }
+  } catch { Write-Warning "Luz: se mantiene el último dato bueno. $($_.Exception.Message)"; $horas = @(); $fechaLuz = $null }
+
+  $min = $null; $max = $null
+  if ($horas.Count) {
+    $media = [math]::Round(($horas | ForEach-Object { $_.p } | Measure-Object -Average).Average, 4)
+    $noche = [math]::Round(($horas | Where-Object { [int]$_.h.Substring(0, 2) -lt 8 } | ForEach-Object { $_.p } | Measure-Object -Average).Average, 4)
+    $min = $horas | Sort-Object { $_.p } | Select-Object -First 1
+    $max = $horas | Sort-Object { $_.p } | Select-Object -Last 1
+    $histLuz = @($histLuz | Where-Object { $_.f -ne $fechaLuz })
+    $histLuz += [ordered]@{ f = $fechaLuz; media = $media; noche = $noche }
+    $histLuz = @($histLuz | Sort-Object { $_.f } | Select-Object -Last 400)
+  }
+  if ($histLuz.Count) {
+    $ultimo = $histLuz[-1]
+    $tramo = @($histLuz | Select-Object -Last 30)
+    $luz = [ordered]@{
+      fecha = $ultimo.f; media = $ultimo.media; noche = $ultimo.noche
+      hogar = [math]::Round(($tramo | ForEach-Object { $_.noche } | Measure-Object -Average).Average * $factorLuz, 3)
+      dias = $tramo.Count; iva = $ivaLuz; impuesto = $impuestoElectrico
+      min = $min; max = $max; horas = @($horas)
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LuzHistoricoPath) | Out-Null
+    [IO.File]::WriteAllText($LuzHistoricoPath, (ConvertTo-Json -InputObject @($histLuz) -Depth 3 -Compress), $utf8)
+  }
+}
+
 $hoy = $fechaApi.ToString('yyyy-MM-dd')
 $salida = [ordered]@{
   fecha = $hoy
@@ -85,6 +142,7 @@ $salida = [ordered]@{
   fuente = 'Ministerio para la Transición Ecológica y el Reto Demográfico'
   estaciones = $estaciones.Count
   nacional = $nacional
+  luz = $luz
   provincias = @($listaProv)
 }
 
@@ -104,8 +162,9 @@ $historico = @($historico | Sort-Object { $_.f })
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $HistoricoPath) | Out-Null
 $jsonHist = ConvertTo-Json -InputObject $historico -Depth 4 -Compress
-[IO.File]::WriteAllText((Join-Path $OutDir 'precios.json'), (ConvertTo-Json -InputObject $salida -Depth 6 -Compress), $utf8)
+[IO.File]::WriteAllText((Join-Path $OutDir 'precios.json'), (ConvertTo-Json -InputObject $salida -Depth 7 -Compress), $utf8)
 [IO.File]::WriteAllText((Join-Path $OutDir 'precios-historico.json'), $jsonHist, $utf8)
 [IO.File]::WriteAllText($HistoricoPath, $jsonHist, $utf8)
 
+if ($luz) { "Luz del $($luz.fecha): media = $($luz.media) | madrugada = $($luz.noche) €/kWh sin impuestos | hogar = $($luz.hogar) €/kWh con impuestos ($($luz.dias) días)" } else { Write-Warning 'Sin datos de luz' }
 "Datos del $($salida.actualizado): 95 = $($nacional.g95) | diésel = $($nacional.diesel) | 98 = $($nacional.g98) | GLP = $($nacional.glp) | $($estaciones.Count) estaciones"
