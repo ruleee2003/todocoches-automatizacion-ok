@@ -30,9 +30,17 @@ jobs:
           fi
           ls -l datos-ministerio.json
 
+      - name: Descargar el precio de la luz
+        run: |
+          HOY=$(TZ=Europe/Madrid date +%F)
+          if ! curl --fail --silent --show-error --max-time 60 --retry 3 --retry-delay 20 --retry-all-errors -H Accept:application/json -o datos-luz.json "https://api.esios.ree.es/archives/70/download_json?locale=es&date=$HOY"; then
+            rm -f datos-luz.json
+            echo "::warning::No se ha podido descargar el precio de la luz; se mantiene el último dato."
+          fi
+
       - name: Generar los archivos de precios
         shell: pwsh
-        run: ./scripts/actualizar-precios.ps1 -Entrada datos-ministerio.json -OutDir salida -HistoricoPath datos/precios-historico.json
+        run: ./scripts/actualizar-precios.ps1 -Entrada datos-ministerio.json -OutDir salida -HistoricoPath datos/precios-historico.json -EntradaLuz datos-luz.json -LuzHistoricoPath datos/luz-historico.json -LuzInicial scripts/luz-historico-inicial.json
       - name: Subir solo los dos archivos JSON a IONOS
         env:
           SFTP_HOST: ${{ secrets.SFTP_HOST }}
@@ -48,6 +56,6 @@ jobs:
         run: |
           git config user.name "todocoches-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add datos/precios-historico.json
+          git add datos/
           git diff --cached --quiet || git commit -m "Precios del $(date +%F)"
           git push
