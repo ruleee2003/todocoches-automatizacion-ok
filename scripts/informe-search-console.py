@@ -124,7 +124,7 @@ def variacion(a, b):
 alertas = []
 if anterior and fallos == 0 and anterior.get("indexadas") and indexadas < anterior["indexadas"] * 0.8:
     alertas.append(f"Las páginas indexadas han caído de {anterior['indexadas']} a {indexadas}.")
-if previo["impresiones"] >= 100 and actual["impresiones"] < previo["impresiones"] * 0.5:
+if previo["impresiones"] >= 500 and actual["impresiones"] < previo["impresiones"] * 0.5:
     alertas.append(f"Las impresiones han caído de {previo['impresiones']} a {actual['impresiones']}.")
 
 L = [f"# Search Console: semana del {inicio:%d/%m} al {fin:%d/%m/%Y}", ""]
