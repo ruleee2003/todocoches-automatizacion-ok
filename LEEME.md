@@ -45,3 +45,7 @@ Cada lunes, `scripts/revision-tecnica.ps1` revisa la web publicada: páginas del
 ## Informe de Search Console
 
 Cada lunes, `scripts/informe-search-console.py` guarda clics, impresiones y páginas indexadas. La lista de páginas sin indexar queda en `datos/paginas-sin-indexar.csv`. Sale en rojo y avisa por correo si las indexadas caen más de un 20 % o, si la semana anterior superó las 500 impresiones, estas caen más de un 50 %. Necesita el secreto `GSC_CREDENCIALES`, con el contenido del archivo JSON de la cuenta de servicio de Google.
+
+## Precios dentro de las páginas
+
+Cada mañana, tras generar los precios, `scripts/actualizar-paginas.ps1` descarga la portada, `precio-gasolina-hoy.html` y las páginas de provincia publicadas, escribe los datos entre las marcas `<!--dato:clave-->...<!--/dato-->` y actualiza su fecha en el sitemap. El diseño se edita en el repositorio de la web; esas marcas no deben borrarse. Si alguna página falla, no se toca y la tarea sale en rojo.

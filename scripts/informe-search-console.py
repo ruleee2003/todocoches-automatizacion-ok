@@ -43,10 +43,12 @@ def elegir_propiedad():
     )
 
 
-def consulta(propiedad, inicio, fin, dimensiones=None, filas=10):
+def consulta(propiedad, inicio, fin, dimensiones=None, filas=10, pagina_contiene=None):
     cuerpo = {"startDate": inicio.isoformat(), "endDate": fin.isoformat(), "type": "web", "rowLimit": filas}
     if dimensiones:
         cuerpo["dimensions"] = dimensiones
+    if pagina_contiene:
+        cuerpo["dimensionFilterGroups"] = [{"filters": [{"dimension": "page", "operator": "contains", "expression": pagina_contiene}]}]
     url = "https://www.googleapis.com/webmasters/v3/sites/" + urllib.parse.quote(propiedad, safe="") + "/searchAnalytics/query"
     r = s.post(url, json=cuerpo, timeout=120)
     r.raise_for_status()
@@ -90,6 +92,8 @@ actual = totales(propiedad, inicio, fin)
 previo = totales(propiedad, inicio_prev, fin_prev)
 top_paginas = consulta(propiedad, inicio, fin, ["page"], 10)
 top_consultas = consulta(propiedad, inicio, fin, ["query"], 10)
+precio_paginas = consulta(propiedad, inicio, fin, ["page"], 20, "precio-gasolina")
+precio_consultas = consulta(propiedad, inicio, fin, ["query"], 15, "precio-gasolina")
 
 mapa = requests.get(WEB + "sitemap.xml", timeout=60)
 mapa.raise_for_status()
@@ -144,6 +148,19 @@ if fallos:
 if motivos:
     L += ["", "## Por qué no se indexan", "", "| Motivo | Páginas |", "|---|---|"] + [f"| {m} | {n} |" for m, n in motivos.most_common()]
     L += ["", f"La lista completa está en `{SIN_INDEXAR}`."]
+estado_precios = [p for p in paginas if "precio-gasolina" in p[0]]
+L += ["", "## Páginas de precios de la gasolina", ""]
+if estado_precios:
+    L += ["| Página | ¿Indexada? |", "|---|---|"]
+    L += [f"| {p[0].replace(WEB, '/')} | {'Sí' if p[1] == 'PASS' else p[2]} |" for p in estado_precios]
+if precio_paginas:
+    L += ["", "| Página | Clics | Impresiones | Posición |", "|---|---|---|---|"]
+    L += [f"| {r['keys'][0].replace(WEB, '/')} | {int(r['clicks'])} | {int(r['impressions'])} | {r['position']:.1f} |" for r in precio_paginas]
+else:
+    L += ["", "Sin impresiones esta semana."]
+if precio_consultas:
+    L += ["", "| Búsqueda | Clics | Impresiones | Posición |", "|---|---|---|---|"]
+    L += [f"| {r['keys'][0]} | {int(r['clicks'])} | {int(r['impressions'])} | {r['position']:.1f} |" for r in precio_consultas]
 if top_paginas:
     L += ["", "## Páginas con más impresiones", "", "| Página | Clics | Impresiones |", "|---|---|---|"]
     L += [f"| {r['keys'][0].replace(WEB, '/')} | {int(r['clicks'])} | {int(r['impressions'])} |" for r in top_paginas]

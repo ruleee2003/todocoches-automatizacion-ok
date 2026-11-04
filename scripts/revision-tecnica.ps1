@@ -103,6 +103,16 @@ else {
   } catch { $errores.Add("precios.json no se puede leer: $($_.Exception.Message)") }
 }
 
+$pag = Pedir ($Base + 'precio-gasolina-hoy.html')
+if ($pag.Status -eq 200) {
+  $mf = [regex]::Match($pag.Text, '<!--dato:fecha-->(\d\d/\d\d/\d{4})')
+  if (-not $mf.Success) { $avisos.Add('La página de precios no lleva la fecha escrita en el HTML') }
+  else {
+    $edadHtml = ((Get-Date).Date - [datetime]::ParseExact($mf.Groups[1].Value, 'dd/MM/yyyy', [Globalization.CultureInfo]::InvariantCulture)).Days
+    if ($edadHtml -gt 2) { $errores.Add("La página de precios lleva $edadHtml días sin reescribirse") }
+  }
+}
+
 # ---------- sitemap ----------
 $sm = Pedir ($Base + 'sitemap.xml')
 if ($sm.Status -ne 200) { throw "sitemap.xml responde $($sm.Status): no se puede continuar" }

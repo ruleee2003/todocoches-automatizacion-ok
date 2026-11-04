@@ -10,7 +10,8 @@ param(
   [Parameter(Mandatory = $true)][string]$HistoricoPath,
   [string]$EntradaLuz = '',
   [string]$LuzHistoricoPath = '',
-  [string]$LuzInicial = ''
+  [string]$LuzInicial = '',
+  [string]$HistProvinciasPath = ''
 )
 
 # Impuestos de la luz: si el Gobierno los cambia, solo hay que tocar estas dos líneas.
@@ -20,7 +21,7 @@ $ErrorActionPreference = 'Stop'
 $Entrada = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Entrada)
 $OutDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutDir)
 $HistoricoPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HistoricoPath)
-foreach ($v in 'EntradaLuz', 'LuzHistoricoPath', 'LuzInicial') {
+foreach ($v in 'EntradaLuz', 'LuzHistoricoPath', 'LuzInicial', 'HistProvinciasPath') {
   $val = Get-Variable $v -ValueOnly
   if ($val) { Set-Variable $v ($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($val)) }
 }
@@ -61,13 +62,14 @@ $nac = @{}; foreach ($k in $campos.Keys) { $nac[$k] = New-Object Collections.Gen
 $prov = @{}
 foreach ($e in $estaciones) {
   $id = [string]$e.IDProvincia
-  if (-not $prov.ContainsKey($id)) { $prov[$id] = @{ g95 = (New-Object Collections.Generic.List[double]); diesel = (New-Object Collections.Generic.List[double]); g98 = (New-Object Collections.Generic.List[double]); glp = (New-Object Collections.Generic.List[double]); n = 0; barata_g95 = $null; barata_diesel = $null } }
+  if (-not $prov.ContainsKey($id)) { $prov[$id] = @{ g95 = (New-Object Collections.Generic.List[double]); diesel = (New-Object Collections.Generic.List[double]); g98 = (New-Object Collections.Generic.List[double]); glp = (New-Object Collections.Generic.List[double]); n = 0; barata_g95 = $null; barata_diesel = $null; todas_g95 = (New-Object Collections.Generic.List[object]); todas_diesel = (New-Object Collections.Generic.List[object]) } }
   $p = $prov[$id]; $p.n++
   foreach ($k in $campos.Keys) {
     $v = Convert-Precio $e.($campos[$k])
     if ($null -eq $v) { continue }
     $nac[$k].Add($v); $p[$k].Add($v)
     if ($k -in 'g95', 'diesel') {
+      $p["todas_$k"].Add([pscustomobject]@{ precio = $v; rotulo = ([string]$e.'Rótulo').Trim(); municipio = ([string]$e.Municipio).Trim(); direccion = ([string]$e.'Dirección').Trim() })
       $b = "barata_$k"
       if ($null -eq $p[$b] -or $v -lt $p[$b].precio) {
         $p[$b] = [ordered]@{ precio = $v; rotulo = ([string]$e.'Rótulo').Trim(); municipio = ([string]$e.Municipio).Trim(); direccion = ([string]$e.'Dirección').Trim() }
@@ -158,8 +160,30 @@ if (Test-Path -LiteralPath $HistoricoPath) {
 $historico += [ordered]@{ f = $hoy; g95 = $nacional.g95; diesel = $nacional.diesel }
 $historico = @($historico | Sort-Object { $_.f })
 
+# --- detalle por provincia: las 5 gasolineras más baratas de cada combustible (no se publica como JSON) ---
+$detalle = [ordered]@{}
+foreach ($id in $prov.Keys) {
+  $pp = $prov[$id]
+  $detalle[$id] = [ordered]@{
+    g95 = @($pp.todas_g95 | Sort-Object precio, rotulo | Select-Object -First 5)
+    diesel = @($pp.todas_diesel | Sort-Object precio, rotulo | Select-Object -First 5)
+  }
+}
+
+# --- histórico por provincia: [gasolina 95, diésel] de cada día ---
+if ($HistProvinciasPath) {
+  $hp = @()
+  if (Test-Path -LiteralPath $HistProvinciasPath) { foreach ($e in ([IO.File]::ReadAllText($HistProvinciasPath, [Text.Encoding]::UTF8) | ConvertFrom-Json)) { if ([string]$e.f -ne $hoy) { $hp += $e } } }
+  $hoyP = [ordered]@{}; foreach ($x in $listaProv) { $hoyP[[string]$x.id] = @($x.g95, $x.diesel) }
+  $hp += [pscustomobject]@{ f = $hoy; p = $hoyP }
+  $hp = @($hp | Sort-Object { [string]$_.f } | Select-Object -Last 400)
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $HistProvinciasPath) | Out-Null
+  [IO.File]::WriteAllText($HistProvinciasPath, (ConvertTo-Json -InputObject $hp -Depth 5 -Compress), $utf8)
+}
+
 # --- escritura ---
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+[IO.File]::WriteAllText((Join-Path $OutDir 'detalle-provincias.json'), (ConvertTo-Json -InputObject $detalle -Depth 5 -Compress), $utf8)
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $HistoricoPath) | Out-Null
 $jsonHist = ConvertTo-Json -InputObject $historico -Depth 4 -Compress
 [IO.File]::WriteAllText((Join-Path $OutDir 'precios.json'), (ConvertTo-Json -InputObject $salida -Depth 7 -Compress), $utf8)
