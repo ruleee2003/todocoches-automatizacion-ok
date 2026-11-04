@@ -165,16 +165,18 @@ function Provincia([string]$h, [string]$id) {
 
 # ---------- proceso ----------
 New-Item -ItemType Directory -Force -Path $rutas.WebSalida | Out-Null
-$tareas = [ordered]@{ 'index.html' = { param($h) Portada $h }; 'precio-gasolina-hoy.html' = { param($h) Principal $h } }
-foreach ($id in $provincias.Keys) { $idLocal = $id; $tareas[$provincias[$id]] = { param($h) Provincia $h $idLocal }.GetNewClosure() }
+$archivos = @('index.html', 'precio-gasolina-hoy.html') + @($provincias.Values)
+$idDe = @{}; foreach ($id in $provincias.Keys) { $idDe[$provincias[$id]] = $id }
 $hechas = @(); $fallos = @()
-foreach ($archivo in $tareas.Keys) {
+foreach ($archivo in $archivos) {
   try {
     $ruta = Join-Path $rutas.WebEntrada $archivo
     if (-not (Test-Path -LiteralPath $ruta)) { throw 'no se ha podido descargar' }
     $antes = [IO.File]::ReadAllText($ruta, [Text.Encoding]::UTF8)
     if ($antes -notmatch '</html>\s*$') { throw 'la página descargada parece incompleta' }
-    $despues = & $tareas[$archivo] $antes
+    if ($archivo -eq 'index.html') { $despues = Portada $antes }
+    elseif ($archivo -eq 'precio-gasolina-hoy.html') { $despues = Principal $antes }
+    else { $despues = Provincia $antes $idDe[$archivo] }
     $ratio = $despues.Length / $antes.Length
     if ($ratio -lt 0.7 -or $ratio -gt 1.6) { throw "tamaño sospechoso (x$($ratio.ToString('0.00', $inv)))" }
     [IO.File]::WriteAllText((Join-Path $rutas.WebSalida $archivo), $despues, $utf8)
