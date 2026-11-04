@@ -1,0 +1,51 @@
+name: Permitir la ubicación en el mapa (solo una vez)
+
+# El .htaccess del servidor prohíbe la geolocalización y por eso "Cerca de mí" no funcionaría.
+# Cambia únicamente geolocation=() por geolocation=(self), guarda una copia en el servidor
+# y, si después la web no responde bien, restaura esa copia.
+on:
+  workflow_dispatch:
+
+jobs:
+  ajustar:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      SFTP_HOST: ${{ secrets.SFTP_HOST }}
+      SFTP_USER: ${{ secrets.SFTP_USER }}
+      LFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+      SFTP_PATH: ${{ secrets.SFTP_PATH }}
+    steps:
+      - name: Instalar lftp
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lftp
+
+      - name: Cambiar la cabecera y comprobar la web
+        run: |
+          sftp_cmd() { lftp --env-password -u "$SFTP_USER" "sftp://$SFTP_HOST" -e "set sftp:auto-confirm yes; set net:max-retries 2; set net:timeout 30; set cmd:fail-exit yes; cd \"${SFTP_PATH:-/}\"; $1; bye"; }
+          sftp_cmd "get .htaccess -o htaccess-actual"
+          if ! grep -q 'geolocation=()' htaccess-actual; then
+            if grep -q 'geolocation=(self)' htaccess-actual; then echo "Ya estaba cambiado: no hay nada que hacer."; exit 0; fi
+            echo "::error::El .htaccess no contiene geolocation=(). No se ha tocado nada."; exit 1
+          fi
+          sed 's/geolocation=()/geolocation=(self)/' htaccess-actual > htaccess-nuevo
+          CAMBIOS=$(diff htaccess-actual htaccess-nuevo | grep -c '^>' || true)
+          echo "Líneas cambiadas: $CAMBIOS"
+          if [ "$CAMBIOS" -ne 1 ]; then echo "::error::Se esperaba cambiar 1 línea y son $CAMBIOS. No se ha tocado nada."; exit 1; fi
+          sftp_cmd "put htaccess-actual -o .htaccess.antes-mapa"
+          sftp_cmd "put htaccess-nuevo -o .htaccess"
+          sleep 5
+          OK=1
+          for u in "" "precio-gasolina-hoy.html" "precios.json"; do
+            COD=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "https://todocoches.org/$u?v=$(date +%s)")
+            echo "/$u responde $COD"
+            [ "$COD" = "200" ] || OK=0
+          done
+          curl --silent --head --max-time 30 "https://todocoches.org/?v=$(date +%s)" | grep -qi 'geolocation=(self)' || OK=0
+          if [ "$OK" != "1" ]; then
+            sftp_cmd "put htaccess-actual -o .htaccess"
+            echo "::error::La comprobación ha fallado: se ha restaurado el .htaccess anterior."
+            exit 1
+          fi
+          echo "Hecho: la web responde bien y la cabecera ya permite la ubicación."

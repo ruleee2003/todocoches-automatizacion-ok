@@ -90,3 +90,32 @@ jobs:
             echo "bye"
           } > paginas.lftp
           lftp --env-password -u "$SFTP_USER" "sftp://$SFTP_HOST" -e "source paginas.lftp"
+
+      # Si fallara la escritura de las páginas, el mapa se actualiza igualmente, y al revés: el aviso sale en rojo.
+      - name: Generar los datos del mapa de gasolineras
+        if: ${{ !cancelled() && hashFiles('salida/precios.json') != '' }}
+        shell: pwsh
+        run: ./scripts/generar-mapa.ps1 -Entrada datos-ministerio.json -Precios salida/precios.json -OutDir mapa-salida
+
+      - name: Subir los datos del mapa a IONOS
+        if: ${{ !cancelled() && hashFiles('mapa-salida/indice.json') != '' }}
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          LFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          SFTP_PATH: ${{ secrets.SFTP_PATH }}
+        run: |
+          {
+            echo "set sftp:auto-confirm yes"
+            echo "set net:max-retries 2"
+            echo "set net:timeout 30"
+            echo "cd \"${SFTP_PATH:-/}\""
+            echo "mkdir -f datos-gasolineras"
+            echo "set cmd:fail-exit yes"
+            echo "cd datos-gasolineras"
+            echo "lcd mapa-salida"
+            for f in mapa-salida/*.json; do n=$(basename "$f"); [ "$n" = "indice.json" ] || echo "put \"$n\""; done
+            echo "put indice.json"
+            echo "bye"
+          } > mapa.lftp
+          lftp --env-password -u "$SFTP_USER" "sftp://$SFTP_HOST" -e "source mapa.lftp"
