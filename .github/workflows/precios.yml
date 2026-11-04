@@ -40,7 +40,7 @@ jobs:
 
       - name: Generar los archivos de precios
         shell: pwsh
-        run: ./scripts/actualizar-precios.ps1 -Entrada datos-ministerio.json -OutDir salida -HistoricoPath datos/precios-historico.json -EntradaLuz datos-luz.json -LuzHistoricoPath datos/luz-historico.json -LuzInicial scripts/luz-historico-inicial.json
+        run: ./scripts/actualizar-precios.ps1 -Entrada datos-ministerio.json -OutDir salida -HistoricoPath datos/precios-historico.json -EntradaLuz datos-luz.json -LuzHistoricoPath datos/luz-historico.json -LuzInicial scripts/luz-historico-inicial.json -HistProvinciasPath datos/provincias-historico.json
       - name: Subir solo los dos archivos JSON a IONOS
         env:
           SFTP_HOST: ${{ secrets.SFTP_HOST }}
@@ -59,3 +59,34 @@ jobs:
           git add datos/
           git diff --cached --quiet || git commit -m "Precios del $(date +%F)"
           git push
+
+      # Va al final a propósito: si fallara, los precios ya están publicados y el histórico, guardado.
+      - name: Descargar las páginas publicadas
+        run: |
+          mkdir -p web-entrada
+          for f in index.html precio-gasolina-hoy.html precio-gasolina-madrid.html precio-gasolina-barcelona.html precio-gasolina-valencia.html precio-gasolina-sevilla.html precio-gasolina-zaragoza.html sitemap.xml; do
+            curl --fail --silent --show-error --max-time 60 --retry 2 --retry-delay 10 -o "web-entrada/$f" "https://todocoches.org/$f?v=$(date +%s)" || rm -f "web-entrada/$f"
+          done
+
+      - name: Escribir los precios del día en las páginas
+        shell: pwsh
+        run: ./scripts/actualizar-paginas.ps1 -Salida salida -Historico datos/precios-historico.json -HistProvincias datos/provincias-historico.json -WebEntrada web-entrada -WebSalida web-salida
+
+      - name: Subir las páginas a IONOS
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          LFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          SFTP_PATH: ${{ secrets.SFTP_PATH }}
+        run: |
+          {
+            echo "set sftp:auto-confirm yes"
+            echo "set net:max-retries 2"
+            echo "set net:timeout 30"
+            echo "set cmd:fail-exit yes"
+            echo "cd \"${SFTP_PATH:-/}\""
+            echo "lcd web-salida"
+            for f in web-salida/*; do echo "put \"$(basename "$f")\""; done
+            echo "bye"
+          } > paginas.lftp
+          lftp --env-password -u "$SFTP_USER" "sftp://$SFTP_HOST" -e "source paginas.lftp"
