@@ -49,3 +49,9 @@ Cada lunes, `scripts/informe-search-console.py` guarda clics, impresiones y pág
 ## Precios dentro de las páginas
 
 Cada mañana, tras generar los precios, `scripts/actualizar-paginas.ps1` descarga la portada, `precio-gasolina-hoy.html` y las páginas de provincia publicadas, escribe los datos entre las marcas `<!--dato:clave-->...<!--/dato-->` y actualiza su fecha en el sitemap. El diseño se edita en el repositorio de la web; esas marcas no deben borrarse. Si alguna página falla, no se toca y la tarea sale en rojo.
+
+## Mapa de gasolineras
+
+Al final de la tarea diaria, `scripts/generar-mapa.ps1` crea un archivo por provincia y un índice, y se suben a la carpeta `datos-gasolineras/` del servidor (no están en ningún repositorio). La página `mapa-gasolineras.html` se edita en el repositorio de la web. La revisión semanal avisa si los datos llevan más de 2 días sin actualizarse.
+
+La tarea `Permitir la ubicación en el mapa` solo hace falta una vez: cambia en el `.htaccess` del servidor `geolocation=()` por `geolocation=(self)` para que funcione «Cerca de mí», y deja una copia en `.htaccess.antes-mapa`.

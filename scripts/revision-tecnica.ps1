@@ -113,6 +113,16 @@ if ($pag.Status -eq 200) {
   }
 }
 
+$mi = Pedir ($Base + 'datos-gasolineras/indice.json')
+if ($mi.Status -ne 200) { $errores.Add("Los datos del mapa de gasolineras responden $($mi.Status)") }
+else {
+  try {
+    $fm = [regex]::Match([string]($mi.Text | ConvertFrom-Json).actualizado, '^\d\d/\d\d/\d{4}')
+    $edadMapa = ((Get-Date).Date - [datetime]::ParseExact($fm.Value, 'dd/MM/yyyy', [Globalization.CultureInfo]::InvariantCulture)).Days
+    if ($edadMapa -gt 2) { $errores.Add("El mapa de gasolineras lleva $edadMapa días sin actualizarse") }
+  } catch { $errores.Add("Los datos del mapa de gasolineras no se pueden leer: $($_.Exception.Message)") }
+}
+
 # ---------- sitemap ----------
 $sm = Pedir ($Base + 'sitemap.xml')
 if ($sm.Status -ne 200) { throw "sitemap.xml responde $($sm.Status): no se puede continuar" }
