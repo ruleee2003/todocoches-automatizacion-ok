@@ -1,0 +1,62 @@
+name: Redirigir subpáginas unidas a sus fichas (solo una vez)
+
+# Lanzar DESPUÉS de publicar la web. Añade al final del .htaccess del servidor 7 redirecciones 301,
+# guarda una copia y, si después la web o las redirecciones no responden bien, restaura esa copia.
+on:
+  workflow_dispatch:
+
+jobs:
+  redirigir:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      SFTP_HOST: ${{ secrets.SFTP_HOST }}
+      SFTP_USER: ${{ secrets.SFTP_USER }}
+      LFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+      SFTP_PATH: ${{ secrets.SFTP_PATH }}
+    steps:
+      - name: Instalar lftp
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lftp
+
+      - name: Añadir las redirecciones y comprobarlas
+        run: |
+          sftp_cmd() { lftp --env-password -u "$SFTP_USER" "sftp://$SFTP_HOST" -e "set sftp:auto-confirm yes; set net:max-retries 2; set net:timeout 30; set cmd:fail-exit yes; cd \"${SFTP_PATH:-/}\"; $1; bye"; }
+          BASE="https://todocoches.org"
+          PARES="seat-arona-versiones-motores:seat-arona seat-ibiza-motores:seat-ibiza omoda-5-motores:omoda-5 toyota-corolla-motores:toyota-corolla mg-zs-seguro:mg-zs volkswagen-golf-distribucion:volkswagen-golf volkswagen-golf-caja-dsg:volkswagen-golf"
+          sftp_cmd "get .htaccess -o htaccess-actual"
+          if grep -q 'todocoches-redirecciones-subpaginas' htaccess-actual; then echo "Ya estaban añadidas: no hay nada que hacer."; exit 0; fi
+          for p in $PARES; do
+            d="${p#*:}"
+            COD=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$BASE/$d.html?v=$(date +%s)")
+            [ "$COD" = "200" ] || { echo "::error::$d.html responde $COD. No se ha tocado nada."; exit 1; }
+            curl --silent --max-time 30 "$BASE/$d.html?v=$(date +%s)" | grep -q 'id="motores-versiones"\|id="seguro"\|id="caja-dsg"' || { echo "::error::$d.html todavía no tiene el contenido unido: publica primero la web. No se ha tocado nada."; exit 1; }
+          done
+          cp htaccess-actual htaccess-nuevo
+          {
+            echo ""
+            echo "# todocoches-redirecciones-subpaginas"
+            for p in $PARES; do echo "Redirect 301 /${p%%:*}.html $BASE/${p#*:}.html"; done
+            echo "# fin-todocoches-redirecciones-subpaginas"
+          } >> htaccess-nuevo
+          sftp_cmd "put htaccess-actual -o .htaccess.antes-redirecciones"
+          sftp_cmd "put htaccess-nuevo -o .htaccess"
+          sleep 5
+          OK=1
+          for u in "" "precio-gasolina-hoy.html" "precios.json" "mapa-gasolineras.html"; do
+            COD=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$BASE/$u?v=$(date +%s)")
+            echo "/$u responde $COD"
+            [ "$COD" = "200" ] || OK=0
+          done
+          for p in $PARES; do
+            RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/${p%%:*}.html")
+            echo "/${p%%:*}.html -> $RES"
+            [ "$RES" = "301 $BASE/${p#*:}.html" ] || OK=0
+          done
+          if [ "$OK" != "1" ]; then
+            sftp_cmd "put htaccess-actual -o .htaccess"
+            echo "::error::La comprobación ha fallado: se ha restaurado el .htaccess anterior."
+            exit 1
+          fi
+          echo "Hecho: la web responde bien y las 7 redirecciones funcionan."
