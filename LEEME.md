@@ -55,3 +55,5 @@ Cada mañana, tras generar los precios, `scripts/actualizar-paginas.ps1` descarg
 Al final de la tarea diaria, `scripts/generar-mapa.ps1` crea un archivo por provincia y un índice, y se suben a la carpeta `datos-gasolineras/` del servidor (no están en ningún repositorio). La página `mapa-gasolineras.html` se edita en el repositorio de la web. La revisión semanal avisa si los datos llevan más de 2 días sin actualizarse.
 
 La tarea `Permitir la ubicación en el mapa` solo hace falta una vez: cambia en el `.htaccess` del servidor `geolocation=()` por `geolocation=(self)` para que funcione «Cerca de mí», y deja una copia en `.htaccess.antes-mapa`.
+
+La tarea `Redirigir subpáginas unidas a sus fichas` solo hace falta una vez, después de publicar la web: añade al `.htaccess` del servidor las redirecciones 301 de las 7 subpáginas integradas en sus fichas y deja una copia en `.htaccess.antes-redirecciones`.
