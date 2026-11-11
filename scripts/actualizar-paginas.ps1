@@ -157,6 +157,16 @@ function Provincia([string]$h, [string]$id) {
     $ahorro = if ($primera) { ([double]$p.($c[0]) - [double]$primera.precio) * 50 } else { 0 }
     $h = Dato $h $c[2] ((F $ahorro 2) + ' €')
   }
+  # seccion de la ciudad (solo si la pagina tiene las marcas y hay datos suficientes)
+  $cd = $x.ciudad
+  if ($h.Contains('<!--dato:ciudad-resumen-->') -and $cd) {
+    $difC = ([double]$cd.max95 - [double]$cd.baratas95[0].precio) * 50
+    $h = Dato $h 'ciudad-resumen' ("En la ciudad de $(Esc $cd.nombre) hay hoy $($cd.n95) gasolineras con gasolina 95, con una media de <strong>$(F $cd.g95) €</strong>, y $($cd.ndiesel) con diésel, a <strong>$(F $cd.diesel) €</strong> de media. La gasolina 95 va de $(F $cd.baratas95[0].precio) € en la más barata a $(F $cd.max95) € en la más cara: $(F $difC 2) € de diferencia en un depósito de 50 litros.")
+    foreach ($c in @(@('baratas95', 'ciudad-tabla95'), @('baratasdiesel', 'ciudad-tabladiesel'))) {
+      $filas = @(); foreach ($e in @($cd.($c[0]))) { $filas += '<tr><td>' + (Esc ([string]$e.rotulo)) + '</td><td>' + (Esc (Nombre ([string]$e.direccion))) + '</td><td>' + (F $e.precio) + ' €</td></tr>' }
+      $h = Dato $h $c[1] ($filas -join '')
+    }
+  }
   $serie = @(); foreach ($e in $histP) { $v = $e.p.$id; if ($v) { $serie += [pscustomobject]@{ f = [string]$e.f; g95 = $v[0]; diesel = $v[1] } } }
   $h = Dato $h 'grafico' (Grafico $serie)
   $h = Descripcion $h ("Hoy en $($p.nombre): gasolina 95 a $(F $p.g95) € y diésel a $(F $p.diesel) € de media. Las gasolineras más baratas de la provincia y la evolución del precio, con datos oficiales.")

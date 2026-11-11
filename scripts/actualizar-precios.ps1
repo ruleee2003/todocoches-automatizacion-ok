@@ -162,11 +162,26 @@ $historico = @($historico | Sort-Object { $_.f })
 
 # --- detalle por provincia: las 5 gasolineras más baratas de cada combustible (no se publica como JSON) ---
 $detalle = [ordered]@{}
+$capitales = [ordered]@{ '28' = 'Madrid'; '08' = 'Barcelona'; '46' = 'Valencia'; '41' = 'Sevilla'; '50' = 'Zaragoza' }
 foreach ($id in $prov.Keys) {
   $pp = $prov[$id]
   $detalle[$id] = [ordered]@{
     g95 = @($pp.todas_g95 | Sort-Object precio, rotulo | Select-Object -First 5)
     diesel = @($pp.todas_diesel | Sort-Object precio, rotulo | Select-Object -First 5)
+  }
+  # capital de las provincias con pagina propia: media, extremos y las 5 mas baratas de la ciudad
+  if ($capitales.Contains($id)) {
+    $cap = $capitales[$id]
+    $c95 = @($pp.todas_g95 | Where-Object { $_.municipio -eq $cap } | Sort-Object precio, rotulo)
+    $cdi = @($pp.todas_diesel | Where-Object { $_.municipio -eq $cap } | Sort-Object precio, rotulo)
+    if ($c95.Count -ge 5 -and $cdi.Count -ge 5) {
+      $detalle[$id]['ciudad'] = [ordered]@{
+        nombre = $cap; n95 = $c95.Count; ndiesel = $cdi.Count
+        g95 = Get-Media @($c95 | ForEach-Object { $_.precio }); diesel = Get-Media @($cdi | ForEach-Object { $_.precio })
+        max95 = $c95[-1].precio; maxdiesel = $cdi[-1].precio
+        baratas95 = @($c95 | Select-Object -First 5); baratasdiesel = @($cdi | Select-Object -First 5)
+      }
+    }
   }
 }
 
