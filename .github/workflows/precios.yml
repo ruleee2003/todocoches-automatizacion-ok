@@ -68,7 +68,7 @@ jobs:
         run: |
           mkdir -p web-entrada
           for f in index.html precio-gasolina-hoy.html precio-gasolina-madrid.html precio-gasolina-barcelona.html precio-gasolina-valencia.html precio-gasolina-sevilla.html precio-gasolina-zaragoza.html sitemap.xml; do
-            curl --fail --silent --show-error --max-time 60 --retry 2 --retry-delay 10 -o "web-entrada/$f" "https://todocoches.org/$f?v=$(date +%s)" || rm -f "web-entrada/$f"
+            curl --fail --silent --show-error --location --max-time 60 --retry 2 --retry-delay 10 -o "web-entrada/$f" "https://todocoches.org/$f?v=$(date +%s)" || rm -f "web-entrada/$f"
           done
 
       - name: Escribir los precios del día en las páginas
@@ -93,6 +93,19 @@ jobs:
             echo "bye"
           } > paginas.lftp
           lftp --env-password -u "$SFTP_USER" "sftp://$SFTP_HOST" -e "source paginas.lftp"
+
+      # Avisa a Bing de que las páginas de precios tienen datos nuevos. Si falla, no pasa nada.
+      - name: Avisar a Bing de las páginas de precios (IndexNow)
+        continue-on-error: true
+        env:
+          CLAVE: 5ec49465eca6fbeefc190115453af839
+        run: |
+          urls=$(cd web-salida && ls *.html 2>/dev/null | sed -e 's#^index\.html$##' -e 's#^#https://todocoches.org/#' | jq -R . | jq -s -c .)
+          if [ -z "$urls" ] || [ "$urls" = "[]" ]; then echo "No hay páginas que avisar."; exit 0; fi
+          curl --silent --show-error --max-time 30 --retry 2 --output /dev/null --write-out 'IndexNow responde %{http_code}\n' \
+               -H 'Content-Type: application/json; charset=utf-8' \
+               --data "{\"host\":\"todocoches.org\",\"key\":\"$CLAVE\",\"keyLocation\":\"https://todocoches.org/$CLAVE.txt\",\"urlList\":$urls}" \
+               https://api.indexnow.org/indexnow
 
       # Si fallara la escritura de las páginas, el mapa se actualiza igualmente, y al revés: el aviso sale en rojo.
       - name: Generar los datos del mapa de gasolineras

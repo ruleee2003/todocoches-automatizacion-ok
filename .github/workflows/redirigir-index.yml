@@ -1,0 +1,62 @@
+name: Redirigir index.html a la portada (solo una vez)
+
+# Lanzar DESPUÉS de publicar la web con los enlaces a "/" y de subir la tarea de precios con "curl -L".
+# Añade al final del .htaccess una redirección 301 de /index.html a /, guarda una copia
+# y, si después la web no responde bien, restaura esa copia.
+on:
+  workflow_dispatch:
+
+jobs:
+  redirigir:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SFTP_HOST: ${{ secrets.SFTP_HOST }}
+      SFTP_USER: ${{ secrets.SFTP_USER }}
+      LFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+      SFTP_PATH: ${{ secrets.SFTP_PATH }}
+    steps:
+      - name: Instalar lftp
+        run: |
+          for i in 1 2 3 4; do
+            sudo apt-get update -qq && sudo apt-get install -y -qq lftp && break
+            echo "Intento $i para instalar lftp fallido; se reintenta en 60 s"; sleep 60
+          done
+          command -v lftp >/dev/null || { echo "::error::No se pudo instalar lftp por un fallo de red de GitHub. No se ha tocado nada."; exit 1; }
+
+      - name: Añadir la redirección y comprobarla
+        run: |
+          sftp_cmd() { lftp --env-password -u "$SFTP_USER" "sftp://$SFTP_HOST" -e "set sftp:auto-confirm yes; set net:max-retries 2; set net:timeout 30; set cmd:fail-exit yes; cd \"${SFTP_PATH:-/}\"; $1; bye"; }
+          BASE="https://todocoches.org"
+          sftp_cmd "get .htaccess -o htaccess-actual"
+          if grep -q 'todocoches-redirigir-index' htaccess-actual; then echo "Ya estaba añadida: no hay nada que hacer."; exit 0; fi
+          cp htaccess-actual htaccess-nuevo
+          {
+            echo ""
+            echo "# todocoches-redirigir-index: /index.html -> / (solo peticiones directas, no las internas del servidor)"
+            echo "RewriteEngine On"
+            echo "RewriteCond %{THE_REQUEST} ^[A-Z]+\\s/index\\.html[\\s?]"
+            echo "RewriteRule ^index\\.html$ $BASE/ [R=301,L]"
+            echo "# fin-todocoches-redirigir-index"
+          } >> htaccess-nuevo
+          sftp_cmd "put htaccess-actual -o .htaccess.antes-index"
+          sftp_cmd "put htaccess-nuevo -o .htaccess"
+          sleep 5
+          OK=1
+          for u in "" "precio-gasolina-hoy.html" "precios.json" "mapa-gasolineras.html" "kia-sportage.html"; do
+            COD=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$BASE/$u?v=$(date +%s)")
+            echo "/$u responde $COD"
+            [ "$COD" = "200" ] || OK=0
+          done
+          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/index.html")
+          echo "/index.html -> $RES"
+          [ "$RES" = "301 $BASE/" ] || OK=0
+          COD=$(curl --silent --location --output /dev/null --max-time 30 --write-out '%{http_code}' "$BASE/index.html?v=1")
+          echo "/index.html?v=1 siguiendo la redirección responde $COD"
+          [ "$COD" = "200" ] || OK=0
+          if [ "$OK" != "1" ]; then
+            sftp_cmd "put htaccess-actual -o .htaccess"
+            echo "::error::La comprobación ha fallado: se ha restaurado el .htaccess anterior."
+            exit 1
+          fi
+          echo "Hecho: /index.html redirige a la portada y la web responde bien."
