@@ -48,8 +48,11 @@ jobs:
           LFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
           SFTP_PATH: ${{ secrets.SFTP_PATH }}
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq lftp
+          for i in 1 2 3 4; do
+            sudo apt-get update -qq && sudo apt-get install -y -qq lftp && break
+            echo "Intento $i para instalar lftp fallido; se reintenta en 60 s"; sleep 60
+          done
+          command -v lftp >/dev/null || { echo "::error::No se pudo instalar lftp por un fallo de red de GitHub"; exit 1; }
           lftp --env-password -u "$SFTP_USER" "sftp://$SFTP_HOST" -e "set sftp:auto-confirm yes; set net:max-retries 2; set net:timeout 30; cd \"${SFTP_PATH:-/}\"; lcd salida; put precios.json; put precios-historico.json; bye"
 
       - name: Guardar el histórico en el repositorio
