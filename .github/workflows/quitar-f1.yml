@@ -47,22 +47,22 @@ jobs:
           sleep 5
           OK=1
           for u in "" "actualidad.html" "kia-sportage.html" "precio-gasolina-hoy.html" "precios.json" "mapa-gasolineras.html"; do
-            COD=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$BASE/$u?v=$(date +%s)")
+            COD=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$BASE/$u?v=$(date +%s)" || true)
             echo "/$u responde $COD"
             [ "$COD" = "200" ] || OK=0
           done
-          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/index.html")
+          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/index.html" || true)
           echo "/index.html -> $RES (debe seguir yendo a la portada)"
           [ "$RES" = "301 $BASE/" ] || OK=0
           for p in $F1; do
-            RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/$p.html")
+            RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/$p.html" || true)
             echo "/$p.html -> $RES"
             [ "$RES" = "301 $BASE/actualidad.html" ] || OK=0
           done
-          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/kia-sportage-hibrido-oferta-11000.html")
+          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/kia-sportage-hibrido-oferta-11000.html" || true)
           echo "/kia-sportage-hibrido-oferta-11000.html -> $RES"
           [ "$RES" = "301 $BASE/kia-sportage.html" ] || OK=0
-          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/categoria-segunda-mano.html")
+          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/categoria-segunda-mano.html" || true)
           echo "/categoria-segunda-mano.html -> $RES"
           [ "$RES" = "301 $BASE/segunda-mano.html" ] || OK=0
           if [ "$OK" != "1" ]; then

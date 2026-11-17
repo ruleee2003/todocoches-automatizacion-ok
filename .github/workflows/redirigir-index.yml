@@ -44,14 +44,14 @@ jobs:
           sleep 5
           OK=1
           for u in "" "precio-gasolina-hoy.html" "precios.json" "mapa-gasolineras.html" "kia-sportage.html"; do
-            COD=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$BASE/$u?v=$(date +%s)")
+            COD=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$BASE/$u?v=$(date +%s)" || true)
             echo "/$u responde $COD"
             [ "$COD" = "200" ] || OK=0
           done
-          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/index.html")
+          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/index.html" || true)
           echo "/index.html -> $RES"
           [ "$RES" = "301 $BASE/" ] || OK=0
-          COD=$(curl --silent --location --output /dev/null --max-time 30 --write-out '%{http_code}' "$BASE/index.html?v=1")
+          COD=$(curl --silent --location --output /dev/null --max-time 30 --write-out '%{http_code}' "$BASE/index.html?v=1" || true)
           echo "/index.html?v=1 siguiendo la redirección responde $COD"
           [ "$COD" = "200" ] || OK=0
           if [ "$OK" != "1" ]; then

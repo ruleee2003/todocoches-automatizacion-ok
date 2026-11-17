@@ -1,0 +1,75 @@
+name: Redirigir los 4 artículos fusionados en su ficha (solo una vez)
+
+# Lanzar DESPUÉS de publicar la web sin esos 4 artículos.
+# Añade al final del .htaccess redirecciones 301 de cada artículo a la sección de su ficha
+# donde está ahora su contenido. Guarda una copia del .htaccess y, si después algo no
+# responde bien, la restaura.
+on:
+  workflow_dispatch:
+
+jobs:
+  redirigir:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SFTP_HOST: ${{ secrets.SFTP_HOST }}
+      SFTP_USER: ${{ secrets.SFTP_USER }}
+      LFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+      SFTP_PATH: ${{ secrets.SFTP_PATH }}
+    steps:
+      - name: Instalar lftp
+        run: |
+          for i in 1 2 3 4; do
+            sudo apt-get update -qq && sudo apt-get install -y -qq lftp && break
+            echo "Intento $i para instalar lftp fallido; se reintenta en 60 s"; sleep 60
+          done
+          command -v lftp >/dev/null || { echo "::error::No se pudo instalar lftp por un fallo de red de GitHub. No se ha tocado nada."; exit 1; }
+
+      - name: Añadir las redirecciones y comprobarlas
+        run: |
+          sftp_cmd() { lftp --env-password -u "$SFTP_USER" "sftp://$SFTP_HOST" -e "set sftp:auto-confirm yes; set net:max-retries 2; set net:timeout 30; set cmd:fail-exit yes; cd \"${SFTP_PATH:-/}\"; $1; bye"; }
+          BASE="https://todocoches.org"
+          # articulo-antiguo destino (con la seccion de la ficha)
+          PARES="byd-seal-u-autonomia-real byd-seal-u.html#autonomia
+          byd-seal-u-bateria-que-esperar byd-seal-u.html#bateria
+          seat-ibiza-motor-1.0-tsi seat-ibiza.html#mv-1-0-tsi
+          volkswagen-golf-motores-fiables volkswagen-golf.html#motores-fiables"
+          sftp_cmd "get .htaccess -o htaccess-actual"
+          if grep -q 'todocoches-fusionar-articulos' htaccess-actual; then echo "Ya estaba añadido: no hay nada que hacer."; exit 0; fi
+          cp htaccess-actual htaccess-nuevo
+          {
+            echo ""
+            echo "# todocoches-fusionar-articulos: articulos fusionados en su ficha el 17/11/2026"
+            echo "RewriteEngine On"
+            echo "$PARES" | while read -r viejo nuevo; do
+              echo "RewriteRule ^$(echo "$viejo" | sed 's/\./\\./g')\\.html$ $BASE/$nuevo [R=301,NE,L]"
+            done
+            echo "# fin-todocoches-fusionar-articulos"
+          } >> htaccess-nuevo
+          echo "Se añade:"; tail -n 8 htaccess-nuevo
+          sftp_cmd "put htaccess-actual -o .htaccess.antes-fusion-articulos"
+          sftp_cmd "put htaccess-nuevo -o .htaccess"
+          sleep 5
+          OK=1
+          for u in "" "byd-seal-u.html" "seat-ibiza.html" "volkswagen-golf.html" "precio-gasolina-hoy.html" "precios.json" "mapa-gasolineras.html"; do
+            COD=$(curl --silent --output /dev/null --max-time 30 --retry 2 --write-out '%{http_code}' "$BASE/$u?v=$(date +%s)" || true)
+            echo "/$u responde $COD"
+            [ "$COD" = "200" ] || OK=0
+          done
+          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/index.html" || true)
+          echo "/index.html -> $RES (debe seguir yendo a la portada)"
+          [ "$RES" = "301 $BASE/" ] || OK=0
+          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/formula1.html" || true)
+          echo "/formula1.html -> $RES (debe seguir yendo a Actualidad)"
+          [ "$RES" = "301 $BASE/actualidad.html" ] || OK=0
+          while read -r viejo nuevo; do
+            RES=$(curl --silent --output /dev/null --max-time 30 --retry 2 --write-out '%{http_code} %{redirect_url}' "$BASE/$viejo.html" || true)
+            echo "/$viejo.html -> $RES"
+            [ "$RES" = "301 $BASE/$nuevo" ] || [ "$RES" = "301 $BASE/${nuevo%%#*}" ] || OK=0
+          done <<< "$(echo "$PARES" | sed 's/^ *//')"
+          if [ "$OK" != "1" ]; then
+            sftp_cmd "put htaccess-actual -o .htaccess"
+            echo "::error::La comprobación ha fallado: se ha restaurado el .htaccess anterior."
+            exit 1
+          fi
+          echo "Hecho: los 4 artículos redirigen a su ficha y la web responde bien."
