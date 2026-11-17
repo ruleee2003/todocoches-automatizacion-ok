@@ -1,0 +1,73 @@
+name: Quitar las páginas de Fórmula 1 (solo una vez)
+
+# Lanzar DESPUÉS de publicar la web sin las 15 páginas retiradas.
+# Añade al final del .htaccess redirecciones 301: las noticias de Fórmula 1 van a Actualidad
+# y la oferta antigua del Sportage híbrido va a la ficha del Kia Sportage. Guarda una copia
+# del .htaccess y, si después algo no responde bien, la restaura.
+on:
+  workflow_dispatch:
+
+jobs:
+  quitar:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SFTP_HOST: ${{ secrets.SFTP_HOST }}
+      SFTP_USER: ${{ secrets.SFTP_USER }}
+      LFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+      SFTP_PATH: ${{ secrets.SFTP_PATH }}
+    steps:
+      - name: Instalar lftp
+        run: |
+          for i in 1 2 3 4; do
+            sudo apt-get update -qq && sudo apt-get install -y -qq lftp && break
+            echo "Intento $i para instalar lftp fallido; se reintenta en 60 s"; sleep 60
+          done
+          command -v lftp >/dev/null || { echo "::error::No se pudo instalar lftp por un fallo de red de GitHub. No se ha tocado nada."; exit 1; }
+
+      - name: Añadir las redirecciones y comprobarlas
+        run: |
+          sftp_cmd() { lftp --env-password -u "$SFTP_USER" "sftp://$SFTP_HOST" -e "set sftp:auto-confirm yes; set net:max-retries 2; set net:timeout 30; set cmd:fail-exit yes; cd \"${SFTP_PATH:-/}\"; $1; bye"; }
+          BASE="https://todocoches.org"
+          F1="formula1 alonso-sainz-baku-2026-novedades antonelli-gana-madring-primer-gp-espana antonelli-gana-monza-remontada-2026 clasificacion-monza-gasly-pole-2026 como-llegar-madring-transporte f1-2027-distancia-carreras-290km gp-azerbaiyan-baku-2026-horarios gp-italia-monza-2026-resumen horarios-gp-espana-madrid-2026 madring-no-sera-valencia-2-domenicali madring-nuevo-circuito-madrid mundial-f1-2026-clasificacion-antes-de-baku que-saber-clasificacion-gp-espana-madring"
+          sftp_cmd "get .htaccess -o htaccess-actual"
+          if grep -q 'todocoches-quitar-f1' htaccess-actual; then echo "Ya estaba añadido: no hay nada que hacer."; exit 0; fi
+          cp htaccess-actual htaccess-nuevo
+          {
+            echo ""
+            echo "# todocoches-quitar-f1: paginas retiradas el 17/11/2026"
+            echo "RewriteEngine On"
+            echo "RewriteRule ^($(echo $F1 | tr ' ' '|'))\\.html$ $BASE/actualidad.html [R=301,L]"
+            echo "RewriteRule ^kia-sportage-hibrido-oferta-11000\\.html$ $BASE/kia-sportage.html [R=301,L]"
+            echo "RewriteRule ^categoria-segunda-mano\\.html$ $BASE/segunda-mano.html [R=301,L]"
+            echo "# fin-todocoches-quitar-f1"
+          } >> htaccess-nuevo
+          sftp_cmd "put htaccess-actual -o .htaccess.antes-f1"
+          sftp_cmd "put htaccess-nuevo -o .htaccess"
+          sleep 5
+          OK=1
+          for u in "" "actualidad.html" "kia-sportage.html" "precio-gasolina-hoy.html" "precios.json" "mapa-gasolineras.html"; do
+            COD=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$BASE/$u?v=$(date +%s)")
+            echo "/$u responde $COD"
+            [ "$COD" = "200" ] || OK=0
+          done
+          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/index.html")
+          echo "/index.html -> $RES (debe seguir yendo a la portada)"
+          [ "$RES" = "301 $BASE/" ] || OK=0
+          for p in $F1; do
+            RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/$p.html")
+            echo "/$p.html -> $RES"
+            [ "$RES" = "301 $BASE/actualidad.html" ] || OK=0
+          done
+          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/kia-sportage-hibrido-oferta-11000.html")
+          echo "/kia-sportage-hibrido-oferta-11000.html -> $RES"
+          [ "$RES" = "301 $BASE/kia-sportage.html" ] || OK=0
+          RES=$(curl --silent --output /dev/null --max-time 30 --write-out '%{http_code} %{redirect_url}' "$BASE/categoria-segunda-mano.html")
+          echo "/categoria-segunda-mano.html -> $RES"
+          [ "$RES" = "301 $BASE/segunda-mano.html" ] || OK=0
+          if [ "$OK" != "1" ]; then
+            sftp_cmd "put htaccess-actual -o .htaccess"
+            echo "::error::La comprobación ha fallado: se ha restaurado el .htaccess anterior."
+            exit 1
+          fi
+          echo "Hecho: las 15 páginas retiradas redirigen y la web responde bien."
