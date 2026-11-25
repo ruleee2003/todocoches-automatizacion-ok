@@ -58,7 +58,14 @@ function Grafico($serie) {
     param($k) $pts = @(); for ($i = 0; $i -lt $n; $i++) { $v = $serie[$i].$k; if ($null -ne $v) { $pts += ((& $fx $i).ToString('0.0', $inv) + ',' + (& $fy ([double]$v)).ToString('0.0', $inv)) } }
     return ($pts -join ' ')
   }
-  $s = '<svg viewBox="0 0 ' + $W + ' ' + $H + '" role="img" aria-label="Evolución del precio medio de la gasolina 95 y el diésel">'
+  # datos de cada día para la etiqueta que aparece al pasar el ratón (grafico-precios.js)
+  $datosDia = @(); for ($i = 0; $i -lt $n; $i++) {
+    $e = $serie[$i]; $c = @([string]$e.f)
+    foreach ($k in 'g95', 'diesel') { if ($null -ne $e.$k) { $c += ([double]$e.$k).ToString('0.000', $inv) } else { $c += '' } }
+    foreach ($k in 'g95', 'diesel') { if ($null -ne $e.$k) { $c += (& $fy ([double]$e.$k)).ToString('0.0', $inv) } else { $c += '0' } }
+    $datosDia += ($c -join ',')
+  }
+  $s = '<svg viewBox="0 0 ' + $W + ' ' + $H + '" role="img" aria-label="Evolución del precio medio de la gasolina 95 y el diésel" data-x0="' + $izq + '" data-x1="' + ($W - $der) + '" data-serie="' + ($datosDia -join ';') + '">'
   for ($i = 0; $i -lt 4; $i++) {
     $v = $min + ($max - $min) * $i / 3; $y = (& $fy $v)
     $s += '<line x1="' + $izq + '" x2="' + ($W - $der) + '" y1="' + $y.ToString('0.0', $inv) + '" y2="' + $y.ToString('0.0', $inv) + '" stroke="var(--line)"/>'
